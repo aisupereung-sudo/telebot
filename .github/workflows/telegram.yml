@@ -1,0 +1,28 @@
+name: Telegram Summary Bot
+
+on:
+  schedule:
+    # 한국 저녁 8시 = UTC 11시
+    - cron: '0 11 * * *'
+  workflow_dispatch: # 수동 실행 버튼
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install libraries
+        run: pip install telethon google-generativeai
+
+      - name: Run Telegram Bot
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          TG_SESSION: ${{ secrets.TG_SESSION }}
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
+        run: python telegram_bot.py
