@@ -2,8 +2,7 @@ name: Telegram Summary Bot
 
 on:
   schedule:
-    # ⏰ 한국 시간 저녁 8시 (매일 실행)
-    # UTC 11:00 = KST 20:00
+    # 한국 시간 저녁 8시 (매일 실행)
     - cron: '0 11 * * *'
   workflow_dispatch: # 수동 실행 버튼
 
@@ -12,23 +11,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
       
+      # 📚 필요한 도구들 한방에 설치 (뷰티풀숩, 리퀘스트 등 추가됨)
       - name: Install libraries
-        # ⭐️ 중요: requests가 꼭 있어야 노션으로 보낼 수 있습니다!
-        run: pip install telethon google-generativeai requests
+        run: pip install telethon google-generativeai requests beautifulsoup4
 
+      # 1️⃣ 텔레그램 요약 봇 실행
       - name: Run Telegram Bot
         env:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION: ${{ secrets.TG_SESSION }}
           GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
-          # ⭐️ 중요: 노션 키도 봇에게 알려줘야 합니다!
           NOTION_KEY: ${{ secrets.NOTION_KEY }}
           NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
         run: python telegram_bot.py
-run: python editorial.py  # 👈 이거 한 줄만 추가!
+
+      # 2️⃣ 네이버 사설/칼럼 봇 실행 (추가된 부분)
+      - name: Run Editorial Bot
+        env:
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
+          NOTION_KEY: ${{ secrets.NOTION_KEY }}
+          NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
+        run: python editorial.py
