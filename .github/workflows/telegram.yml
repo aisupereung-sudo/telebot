@@ -2,7 +2,8 @@ name: Telegram Summary Bot
 
 on:
   schedule:
-    # 한국 저녁 8시 = UTC 11시
+    # ⏰ 한국 시간 저녁 8시 (매일 실행)
+    # UTC 11:00 = KST 20:00
     - cron: '0 11 * * *'
   workflow_dispatch: # 수동 실행 버튼
 
@@ -17,7 +18,8 @@ jobs:
           python-version: '3.11'
       
       - name: Install libraries
-        run: pip install telethon google-generativeai
+        # ⭐️ 중요: requests가 꼭 있어야 노션으로 보낼 수 있습니다!
+        run: pip install telethon google-generativeai requests
 
       - name: Run Telegram Bot
         env:
@@ -25,4 +27,7 @@ jobs:
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
           TG_SESSION: ${{ secrets.TG_SESSION }}
           GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
+          # ⭐️ 중요: 노션 키도 봇에게 알려줘야 합니다!
+          NOTION_KEY: ${{ secrets.NOTION_KEY }}
+          NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
         run: python telegram_bot.py
