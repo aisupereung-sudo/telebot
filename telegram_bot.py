@@ -1,6 +1,6 @@
 import os
 import asyncio
-import requests # 노션 통신용
+import requests
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 import google.generativeai as genai
@@ -20,7 +20,7 @@ except KeyError as e:
     print(f"❌ 환경변수 설정 오류: {e}")
     exit(1)
 
-# 🎯 타겟 채팅방 설정
+# 🎯 타겟 채팅방
 TARGET_CHATS = [
     '주식', '뉴스', '부동산', '창고', '리서치', '투자', 
     '여의도', '렙', 'research', '부자', '데이터', '공부방', 
@@ -30,8 +30,8 @@ TARGET_CHATS = [
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel('gemini-2.0-flash')
 
-# --- [기능] 노션 전송 함수 ---
-def send_to_notion(title, chat_name, summary, date_str):
+# --- [기능] 노션 전송 (디자인 업그레이드 Ver) ---
+def send_to_notion(title, chat_name, summary, original_text, date_str):
     url = "https://api.notion.com/v1/pages"
     headers = {
         "Authorization": f"Bearer {NOTION_KEY}",
@@ -39,27 +39,51 @@ def send_to_notion(title, chat_name, summary, date_str):
         "Notion-Version": "2022-06-28"
     }
     
-    # 노션 블록(본문) 구성 - 2000자 제한 안전하게 자르기
+    # 노션 텍스트 길이 제한 안전장치 (2000자)
     safe_summary = summary[:1900]
-    
+    safe_original = original_text[:1900] + "\n...(내용이 길어서 생략됨)" if len(original_text) > 1900 else original_text
+
     payload = {
         "parent": {"database_id": NOTION_DB_ID},
         "properties": {
             "제목": {"title": [{"text": {"content": title}}]},
-            "방이름": {"select": {"name": chat_name}},
+            "방이름": {"select": {"name": chat_name}}, # '선택' 타입
             "날짜": {"date": {"start": date_str}},
             "요약": {"rich_text": [{"text": {"content": safe_summary[:100] + "..."}}]} 
         },
         "children": [
+            # 1. 💡 요약 강조 박스 (Callout Block)
             {
                 "object": "block",
-                "type": "heading_2",
-                "heading_2": {"rich_text": [{"text": {"content": "💡 3줄 핵심 요약"}}]}
+                "type": "callout",
+                "callout": {
+                    "rich_text": [{"text": {"content": safe_summary}}],
+                    "icon": {"emoji": "💡"},
+                    "color": "gray_background"
+                }
             },
+            # 2. 구분선
             {
                 "object": "block",
-                "type": "paragraph",
-                "paragraph": {"rich_text": [{"text": {"content": safe_summary}}]}
+                "type": "divider",
+                "divider": {}
+            },
+            # 3. 📂 원본 대화 펼치기 (Toggle Block)
+            {
+                "object": "block",
+                "type": "toggle",
+                "toggle": {
+                    "rich_text": [{"text": {"content": "💬 원본 대화 내용 보기 (클릭)"}}],
+                    "children": [
+                        {
+                            "object": "block",
+                            "type": "paragraph",
+                            "paragraph": {
+                                "rich_text": [{"text": {"content": safe_original}}]
+                            }
+                        }
+                    ]
+                }
             }
         ]
     }
@@ -75,26 +99,21 @@ def send_to_notion(title, chat_name, summary, date_str):
 
 # --- [메인] ---
 async def main():
-    print("🚀 텔레그램 -> 노션/메시지 봇 가동...")
+    print("🚀 텔레그램 -> 노션(디자인UP) 가동...")
     
     client = TelegramClient(StringSession(SESSION_STR), API_ID, API_HASH)
     await client.connect()
 
-    # 한국 시간 설정
     korea_now = datetime.utcnow() + timedelta(hours=9)
     today_str = korea_now.strftime("%Y-%m-%d")
-    
-    # 24시간 전 데이터부터 (매일 돌리니까)
     time_limit = korea_now - timedelta(hours=24)
 
-    # 텔레그램/깃허브용 리포트 텍스트
     full_report = f"# 📅 {today_str} 텔레그램 요약\n\n"
     has_update = False
 
     async for dialog in client.iter_dialogs():
         chat_title = dialog.name
         
-        # 타겟 방 확인
         is_target = False
         for target in TARGET_CHATS:
             if target in chat_title:
@@ -124,29 +143,37 @@ async def main():
         print(f"{count}개 요약...", end=" ")
 
         try:
-            # AI 요약
+            # ✨ 프롬프트 강화: 더 깔끔하게 요약하도록 지시
             prompt = f"""
-            텔레그램 대화를 핵심만 3줄로 요약해.
-            [방] {chat_title}
-            [내용] {messages_text[:5000]}
+            너는 주식/경제 정보 요약 전문가야.
+            아래 텔레그램 대화 내용을 분석해서 가장 중요한 인사이트를 정리해.
+            
+            [채팅방] {chat_title}
+            [내용]
+            {messages_text[:4000]}
+            
+            [요약 규칙]
+            1. '잡담'은 모두 제거해.
+            2. 핵심 주제 3가지를 글머리기호(•)를 써서 요약해.
+            3. 문장은 간결하고 명확하게 끝맺어. (예: ~함, ~임)
+            4. 전체 길이는 5~7줄 이내로.
             """
             response = model.generate_content(prompt)
-            summary_text = response.text
+            summary_text = response.text.strip()
             
             print("완료! -> 노션 저장...", end=" ")
             
-            # 1. 노션 전송
-            page_title = f"[{today_str}] {chat_title} 요약"
-            send_to_notion(page_title, chat_title, summary_text, today_str)
+            # 노션 전송 (원본 텍스트도 같이 보냄)
+            page_title = f"[{today_str}] {chat_title}"
+            send_to_notion(page_title, chat_title, summary_text, messages_text, today_str)
             
-            # 2. 통합 리포트 누적
             full_report += f"### 📢 {chat_title}\n{summary_text}\n\n---\n\n"
             has_update = True
             
         except Exception as e:
             print(f"에러: {e}")
 
-    # ✅ 3. 나에게 텔레그램 메시지 보내기
+    # 텔레그램 전송
     if has_update:
         try:
             if len(full_report) > 4000:
@@ -154,24 +181,19 @@ async def main():
             else:
                 await client.send_message('me', full_report)
             print("📬 텔레그램 전송 완료!")
-        except Exception as e:
-            print(f"❌ 전송 실패: {e}")
+        except: pass
 
     await client.disconnect()
 
-    # ✅ 4. 깃허브 README 업데이트
+    # 깃허브 저장
     if has_update:
         with open("README.md", "w", encoding="utf-8") as f:
             f.write(full_report)
-        
         os.system("git config --global user.email 'bot@github.com'")
         os.system("git config --global user.name 'NewsBot'")
         os.system("git add README.md")
-        os.system("git commit -m 'Update Telegram Report'")
+        os.system("git commit -m 'Update Report'")
         os.system("git push")
-        print("\n🌐 깃허브 업데이트 완료!")
-    else:
-        print("\n💤 요약할 내용이 없습니다.")
 
 if __name__ == '__main__':
     asyncio.run(main())
