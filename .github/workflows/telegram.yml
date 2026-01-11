@@ -31,3 +31,4 @@ jobs:
           NOTION_KEY: ${{ secrets.NOTION_KEY }}
           NOTION_DB_ID: ${{ secrets.NOTION_DB_ID }}
         run: python telegram_bot.py
+run: python editorial.py  # 👈 이거 한 줄만 추가!
