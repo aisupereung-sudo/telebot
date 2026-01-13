@@ -3,8 +3,7 @@ import asyncio
 import requests
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-import google.genai as genai # 최신 라이브러리 권장이나 기존 호환 유지
-import google.generativeai as genai_old
+import google.generativeai as genai # ✅ 기존 라이브러리로 복귀 (에러 해결)
 from datetime import datetime, timedelta
 
 # ==============================================================================
@@ -28,12 +27,12 @@ TARGET_CHATS = [
     '고수', '인사이트', '탐방', '지식', 'IR', '증권'
 ]
 
-# 제미나이 설정 (컨텍스트 윈도우가 큰 2.0 Flash 사용 필수)
-genai_old.configure(api_key=GEMINI_KEY)
-model = genai_old.GenerativeModel('gemini-2.0-flash')
+# 제미나이 설정
+genai.configure(api_key=GEMINI_KEY)
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 # --- [기능] 노션 통합 리포트 전송 ---
-def send_to_notion(title, content, summary_blocks, date_str):
+def send_to_notion(title, content, date_str):
     url = "https://api.notion.com/v1/pages"
     headers = {
         "Authorization": f"Bearer {NOTION_KEY}",
@@ -55,13 +54,23 @@ def send_to_notion(title, content, summary_blocks, date_str):
         }
     })
 
-    # 2. 본문 (AI가 생성한 분석 내용) - 단락별로 쪼개서 넣기
-    # (Notion 블록 길이 제한 때문에 2000자 단위로 자르는 로직이 필요할 수 있으나, 일단 단순화)
+    # 2. 본문 (AI가 생성한 분석 내용) - 2000자 제한 고려하여 쪼개기
+    # (단순하게 텍스트 전체를 하나의 블록에 넣으면 길어서 잘릴 수 있음 -> 문단별 분리 추천하나 여기선 2000자 컷)
+    safe_content = content[:2000]
+    
     children.append({
         "object": "block",
         "type": "paragraph",
-        "paragraph": {"rich_text": [{"text": {"content": content[:2000]}}]}
+        "paragraph": {"rich_text": [{"text": {"content": safe_content}}]}
     })
+
+    # 내용이 더 있다면 추가 블록 생성
+    if len(content) > 2000:
+        children.append({
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {"rich_text": [{"text": {"content": content[2000:4000]}}]}
+        })
 
     payload = {
         "parent": {"database_id": NOTION_DB_ID},
@@ -75,8 +84,11 @@ def send_to_notion(title, content, summary_blocks, date_str):
     }
 
     try:
-        requests.post(url, headers=headers, json=payload)
-        print("   ✅ 노션 저장 성공!")
+        res = requests.post(url, headers=headers, json=payload)
+        if res.status_code == 200:
+            print("   ✅ 노션 저장 성공!")
+        else:
+            print(f"   ❌ 노션 저장 실패: {res.text}")
     except Exception as e:
         print(f"   ❌ 노션 에러: {e}")
 
@@ -110,18 +122,17 @@ async def main():
                 break
         if not is_target: continue
 
-        checked_channels += 1
         print(f"   Reading [{chat_title}]...", end=" ")
         
         msgs_in_channel = ""
         msg_count = 0
         
         try:
-            # 방 하나당 최신 30개만 (너무 옛날 대화는 노이즈)
+            # 방 하나당 최신 30개만
             async for msg in client.iter_messages(dialog, limit=30):
                 if msg.date.replace(tzinfo=None) < time_limit.replace(tzinfo=None): break
                 
-                # 너무 짧은 잡담 제거, 링크만 있는 것 제거
+                # 너무 짧은 잡담 제거
                 if msg.text and len(msg.text) > 30: 
                     # [채널명] 내용 형식으로 기록하여 출처 구분
                     msgs_in_channel += f"Source: {chat_title} | Content: {msg.text}\n"
@@ -134,6 +145,7 @@ async def main():
             all_conversations += msgs_in_channel + "\n"
             collected_count += msg_count
             print(f"{msg_count}개 수집 완료")
+            checked_channels += 1
         else:
             print("새 글 없음")
 
@@ -169,7 +181,6 @@ async def main():
     [데이터]
     {all_conversations[:50000]} 
     """
-    # 데이터가 너무 많으면 50,000자로 자름 (Gemini Flash는 더 많이도 가능하지만 안전하게)
 
     try:
         response = model.generate_content(prompt)
@@ -190,7 +201,7 @@ async def main():
         print("📬 텔레그램 전송 완료")
 
         # (2) 노션 저장
-        send_to_notion(f"📊 [{today_str}] 마켓 통합 인사이트", analysis_result, [], today_str)
+        send_to_notion(f"📊 [{today_str}] 마켓 통합 인사이트", analysis_result, today_str)
 
     except Exception as e:
         print(f"❌ 분석/전송 중 에러 발생: {e}")
