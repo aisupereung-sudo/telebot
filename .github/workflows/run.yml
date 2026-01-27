@@ -2,7 +2,7 @@ name: All-in-One Investment Bot
 
 on:
   schedule:
-    # 1️⃣ 공시 스나이퍼 (장중 감시)
+    # 1️⃣ 공시 스나이퍼 (장중 실시간 감시)
     # 한국 09:00 ~ 18:00 (UTC 00:00 ~ 09:00), 20분 간격
     - cron: '*/20 0-9 * * 1-5'
 
@@ -26,11 +26,7 @@ jobs:
         with:
           python-version: '3.9'
           
-      # 📚 [중요] 최신 봇들에 필요한 라이브러리 일괄 설치
-      # pdfplumber: 주식 리포트용
-      # python-telegram-bot: 텔레그램 전송용
-      # beautifulsoup4/requests: 크롤링용
-      # google-generativeai: AI 요약용
+      # 📚 [에러 해결 핵심] python-telegram-bot 라이브러리 추가됨!
       - name: Install Libraries
         run: pip install pdfplumber requests beautifulsoup4 google-generativeai python-telegram-bot
 
