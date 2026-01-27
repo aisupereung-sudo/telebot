@@ -1,0 +1,72 @@
+name: All-in-One Investment Bot
+
+on:
+  schedule:
+    # 1️⃣ 공시 스나이퍼 (장중 감시)
+    # 한국 09:00 ~ 18:00 (UTC 00:00 ~ 09:00), 20분 간격
+    - cron: '*/20 0-9 * * 1-5'
+
+    # 2️⃣ 주식/시황 통합 리포트 (이메일 발송)
+    # 한국 17:00 (UTC 08:00)
+    - cron: '0 8 * * 1-5'
+
+    # 3️⃣ 텔레그램 채널 인사이트 (텔레그램 발송)
+    # 한국 20:00 (UTC 11:00) - 하루 마무리용
+    - cron: '0 11 * * 1-5'
+
+  workflow_dispatch: # 수동 실행 버튼
+
+jobs:
+  run-bots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      # 📚 [중요] 최신 봇들에 필요한 라이브러리 일괄 설치
+      # pdfplumber: 주식 리포트용
+      # python-telegram-bot: 텔레그램 전송용
+      # beautifulsoup4/requests: 크롤링용
+      # google-generativeai: AI 요약용
+      - name: Install Libraries
+        run: pip install pdfplumber requests beautifulsoup4 google-generativeai python-telegram-bot
+
+      # ---------------------------------------------------------------
+      # 🤖 1. 공시 스나이퍼 (dart_bot.py)
+      # 조건: 스케줄이 20분 간격이거나(낮시간), 수동 실행일 때
+      # ---------------------------------------------------------------
+      - name: Run Disclosure Sniper
+        if: contains(github.event.schedule, '*/20') || github.event_name == 'workflow_dispatch'
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python dart_bot.py
+
+      # ---------------------------------------------------------------
+      # 🤖 2. 주식/시황 통합 리포트 (main.py)
+      # 조건: 스케줄이 08:00(오후5시) 이거나, 수동 실행일 때
+      # ---------------------------------------------------------------
+      - name: Run Main Stock Report
+        if: github.event.schedule == '0 8 * * 1-5' || github.event_name == 'workflow_dispatch'
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          MY_EMAIL: ${{ secrets.MY_EMAIL }}
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+        run: python main.py
+
+      # ---------------------------------------------------------------
+      # 🤖 3. 텔레그램 인사이트 (telegram_bot.py)
+      # 조건: 스케줄이 11:00(저녁8시) 이거나, 수동 실행일 때
+      # ---------------------------------------------------------------
+      - name: Run Telegram Insight
+        if: github.event.schedule == '0 11 * * 1-5' || github.event_name == 'workflow_dispatch'
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python telegram_bot.py
